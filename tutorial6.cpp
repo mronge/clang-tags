@@ -63,7 +63,17 @@ public:
               continue;
             }
 
-            std::cout << "Classname: " << vdc->getNameAsString() << " LineNum: " << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) << " Column: "<< aSourceManager->getInstantiationColumnNumber(vdc->getClassLoc()) << " Filename: " <<  aSourceManager->getBufferName(vdc->getClassLoc()) << std::endl;
+            std::cout << "Classname: "
+                      << vdc->getNameAsString() 
+                      << " LineNum: " 
+                      << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) 
+                      << " Column: "
+                      << aSourceManager->getInstantiationColumnNumber(vdc->getClassLoc()) 
+                      << " Filename: " 
+                      <<  aSourceManager->getBufferName(vdc->getClassLoc()) 
+                      << " File offset " 
+                      << aSourceManager->getFileOffset(vdc->getClassLoc()) 
+                      << std::endl;
         }
     }
 };
