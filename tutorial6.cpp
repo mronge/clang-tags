@@ -63,7 +63,7 @@ public:
               continue;
             }
 
-            std::cout << vdc->getNameAsString() << " " << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) << std::endl;
+            std::cout << "Classname: " << vdc->getNameAsString() << " LineNum: " << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) << " Filename: " <<  aSourceManager->getBufferName(vdc->getClassLoc()) << std::endl;
         }
     }
 };
