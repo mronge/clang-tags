@@ -34,6 +34,7 @@
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclObjC.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/Ownership.h"
 #include "clang/AST/DeclGroup.h"
@@ -45,7 +46,8 @@
 class MyASTConsumer : public clang::ASTConsumer
 {
 public:
-    MyASTConsumer() : clang::ASTConsumer() { }
+  clang::SourceManager *aSourceManager;
+  MyASTConsumer(clang::SourceManager *sourceManager) : clang::ASTConsumer(), aSourceManager(sourceManager) { }
     virtual ~MyASTConsumer() { }
 
     virtual void HandleTopLevelDecl( clang::DeclGroupRef d)
@@ -55,18 +57,13 @@ public:
         for( it = d.begin(); it != d.end(); it++)
         {
             count++;
-            clang::VarDecl *vd = dyn_cast<clang::VarDecl>(*it);
-            if(!vd)
+            clang::ObjCInterfaceDecl *vdc = dyn_cast<clang::ObjCInterfaceDecl>(*it);
+            if (!vdc)
             {
-                continue;
+              continue;
             }
-            std::cout << vd << std::endl;
-            if( vd->isFileVarDecl() && vd->hasExternalStorage() )
-            {
-                std::cerr << "Read top-level variable decl: '";
-                std::cerr << vd->getDeclName().getAsString() ;
-                std::cerr << std::endl;
-            }
+
+            std::cout << vdc->getNameAsString() << " " << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) << std::endl;
         }
     }
 };
@@ -82,6 +79,8 @@ int main()
 	clang::Diagnostic diagnostic(pDiagIDs, pTextDiagnosticPrinter);
 
 	clang::LangOptions languageOptions;
+        languageOptions.ObjC1 = 1;
+        languageOptions.ObjC2 = 1;
 	clang::FileSystemOptions fileSystemOptions;
 	clang::FileManager fileManager(fileSystemOptions);
 
@@ -106,6 +105,10 @@ int main()
 			false,
 			false,
 			false);
+
+
+
+
 	headerSearchOptions.AddPath("/usr/include/c++/4.4/tr1",
 			clang::frontend::Angled,
 			false,
@@ -148,7 +151,7 @@ int main()
 		frontendOptions);
 		
 	const clang::FileEntry *pFile = fileManager.getFile(
-        "test.c");
+        "DCILatLon.m");
 	sourceManager.createMainFileID(pFile);
 	//preprocessor.EnterMainSourceFile();
 
@@ -167,7 +170,7 @@ int main()
         builtinContext,
         0 /* size_reserve*/);
    // clang::ASTConsumer astConsumer;
-   MyASTConsumer astConsumer;
+    MyASTConsumer astConsumer(&sourceManager);
 
     clang::Sema sema(
         preprocessor,
