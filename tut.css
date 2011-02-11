@@ -1,0 +1,89 @@
+/* For the most part, literaly stolen from _why's poignant guide.
+ * Thanks, _why! */
+body {
+  font-family: Utopia, Georgia, Times, serif;
+  text-align: center; /* centers .page in ie5 */
+  margin: 0;
+  padding: 0;
+  background-color: #edefe4;
+}
+.by {
+  margin: 0px;
+  margin-bottom: 55px;
+}
+.page {
+  text-align: left;
+  line-height: 170%;
+  width: 826px;
+  margin: 0px auto; /* centers .page everywhere else */
+  background-color: white;
+  padding: 12px;
+  -moz-border-radius: 14px;
+  -webkit-border-radius: 14px;
+  margin-top: 55px;
+  margin-bottom: 20px;
+}
+pre {
+  padding: 15px;
+  margin: 0px 60px 0px 20px; /* t r b l */
+  background-color: #f6f6f6;
+  border: 1px solid #cccccc;
+  -moz-border-radius: 4px;
+  -webkit-border-radius: 4px;
+}
+p {
+  padding: 5px;
+  margin: 0px 40px 0px 0px;
+}
+code {
+  background-color: #f6f6f6;
+}
+h1 {
+  font-size: 2.6em;
+  /*border-bottom: solid 2px #aaa;*/
+  margin-bottom: 8px;
+  line-height: 120%;
+  padding: 5px;
+}
+h2 {
+  border-bottom: solid 1px #BBB;
+  font-size: 1.4em;
+  line-height: 130%;
+  margin: 32px 40px 8px 5px;
+}
+h3 {
+  font-size: 1.2em;
+  line-height: 120%;
+  margin: 18px 5px 8px 5px;
+  border-bottom: solid 1px #CCC;
+}
+blockquote {
+  border-left: solid 5px #CCC;
+  padding: 0px 0px 0px 10px;
+  margin-left: 5px;
+  margin-right: 0px;
+}
+.footer {
+  font-style: italic;
+  color: gray;
+  margin-bottom: 40px;
+}
+.sidebar {
+  color: #000;
+  background-color: #edefe4;
+  width: 240px;
+  float: right;
+  position: relative;
+  left: 200px;
+  padding: 0;
+  margin: 0;
+  margin-left: 14px;
+  z-index: 15;
+}
+.sidebar h1 {
+    text-align: center;
+    margin: 0;
+    padding: 4px;
+    font-size: 1.2em;
+}
+

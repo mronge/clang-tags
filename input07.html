@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Global variables</title>
+
+<style type="text/css">
+body {
+  font-family: Utopia, Georgia, Times, serif;
+}
+.global {
+  background-color: #f6f6f6;
+  border: 1px solid #cccccc;
+  margin-bottom: 10px;
+  margin-left: 0px;
+  -moz-border-radius: 4px;
+  -webkit-border-radius: 4px;
+  
+}
+.head {
+  line-height: 100%;
+  padding-top: 10px;
+  padding-left: 5px;
+}
+.head:hover {
+  cursor: pointer;
+  background-color: #ffffe0;
+}
+.name {
+  font-size: 24px;
+}
+.totalcount {
+  font-size: 12px;
+  margin-left: 5px;
+  color: #888888;
+}
+.filecount {
+  font-size: 12px;
+  color: #888888;
+}
+.defineinfo {
+  display: block;
+  font-size: 12px;
+  color: #888888;
+}
+.file {
+  padding-left: 5px;
+}
+.file:hover {
+  background-color: #ffffe0;
+  cursor: pointer;
+}
+.uses {
+  padding-top: 3px;
+  border-top: 1px solid #cccccc;
+}
+pre {
+  margin: 0px;
+  padding-left: 5px;
+  margin-bottom: 6px;
+}
+</style>
+
+<script type="text/javascript"
+  src="http://ajax.googleapis.com/ajax/libs/jquery/1.2.6/jquery.min.js">
+</script>
+<script type="text/javascript">
+$(document).ready(function() {
+  $('div.usefile + div.usefile > pre').hide();  /* don't hide first file */
+  $('.file').click(function() {
+    $(this).next().slideToggle();
+  });
+  $('.uses').hide();
+  $('.head').click(function() {
+    $(this).next().slideToggle();
+  });
+  $('a#toggle').click(function() {
+    $('.static').toggle();
+    if ($(this).text() == 'Show static globals')
+      $(this).text('Hide static globals')
+    else
+      $(this).text('Show static globals')
+    return false;
+  });
+});
+</script>
+</head>
+<body>
+<!--<h2>TODO</h2>
+<ul>
+  <li>Sort by usage/name</li>
+  <li>types of globals?</li>
+  <li>show declaring code?</li>
+  <li>show code lines that use globals?</li>
+  <li>Index at the right-hand side?</li>
+</ul>-->
+<h1>Globals</h1>
+
+<a href="" id="toggle">Hide static globals</a>
+<p>6 globals defined, 3 of them are <code>static</code>.</p>
+<div class="global">
+<div class="head"><code class="name">bla</code><span class="totalcount"> (3 uses in 2 translation units)</span>
+<span class="defineinfo">defined in translation unit input07_1.c, declared in ./input07.h:4</span></div>
+<div class="uses"><div class="usefile"><div class="file"><span class="filename">input07_1.c</span><span class="filecount"> (1 use)</span></div>
+<pre><code>  f():
+  <a href="mvim://open?line=12&url=file:///Users/nico/src/clangtut/input07_1.c">12</a>:   int u = bla;
+</code></pre></div><div class="usefile"><div class="file"><span class="filename">input07_2.c</span><span class="filecount"> (2 uses)</span></div>
+<pre><code>  g():
+  <a href="mvim://open?line=15&url=file:///Users/nico/src/clangtut/input07_2.c">15</a>:   int u = bla;
+  <a href="mvim://open?line=19&url=file:///Users/nico/src/clangtut/input07_2.c">19</a>:   printf("%d", 0?(1?bla:blah):1);
+</code></pre></div></div></div>
+
+<div class="global static">
+<div class="head"><code class="name">blah</code><span class="totalcount"> (2 uses in 1 translation unit)</span>
+<span class="defineinfo">defined static in translation unit input07_2.c, declared in input07_2.c:8</span></div>
+<div class="uses"><div class="usefile"><div class="file"><span class="filename">input07_2.c</span><span class="filecount"> (2 uses)</span></div>
+<pre><code>  g():
+  <a href="mvim://open?line=16&url=file:///Users/nico/src/clangtut/input07_2.c">16</a>:   int v = blah;
+  <a href="mvim://open?line=19&url=file:///Users/nico/src/clangtut/input07_2.c">19</a>:   printf("%d", 0?(1?bla:blah):1);
+</code></pre></div></div></div>
+
+<div class="global">
+<div class="head"><code class="name">blah</code><span class="totalcount"> (1 use in 1 translation unit)</span>
+<span class="defineinfo">defined in translation unit input07_1.c, declared in input07_1.c:6</span></div>
+<div class="uses"><div class="usefile"><div class="file"><span class="filename">input07_1.c</span><span class="filecount"> (1 use)</span></div>
+<pre><code>  f():
+  <a href="mvim://open?line=13&url=file:///Users/nico/src/clangtut/input07_1.c">13</a>:   int v = blah;
+</code></pre></div></div></div>
+
+<div class="global">
+<div class="head"><code class="name">blubb</code><span class="totalcount"> (1 use in 1 translation unit)</span>
+<span class="defineinfo">defined in translation unit input07_2.c, declared in input07_2.c:9</span></div>
+<div class="uses"><div class="usefile"><div class="file"><span class="filename">input07_2.c</span><span class="filecount"> (1 use)</span></div>
+<pre><code>  g():
+  <a href="mvim://open?line=17&url=file:///Users/nico/src/clangtut/input07_2.c">17</a>:   int w = blubb;
+</code></pre></div></div></div>
+
+<div class="global static">
+<div class="head"><code class="name">static_h</code><span class="totalcount"> (1 use in 1 translation unit)</span>
+<span class="defineinfo">defined static in translation unit input07_1.c, declared in ./input07.h:2</span></div>
+<div class="uses"><div class="usefile"><div class="file"><span class="filename">input07_1.c</span><span class="filecount"> (1 use)</span></div>
+<pre><code>  f():
+  <a href="mvim://open?line=10&url=file:///Users/nico/src/clangtut/input07_1.c">10</a>:   int s = static_h;
+</code></pre></div></div></div>
+
+<div class="global static">
+<div class="head"><code class="name">static_h</code><span class="totalcount"> (1 use in 1 translation unit)</span>
+<span class="defineinfo">defined static in translation unit input07_2.c, declared in ./input07.h:2</span></div>
+<div class="uses"><div class="usefile"><div class="file"><span class="filename">input07_2.c</span><span class="filecount"> (1 use)</span></div>
+<pre><code>  g():
+  <a href="mvim://open?line=13&url=file:///Users/nico/src/clangtut/input07_2.c">13</a>:   int s = static_h;
+</code></pre></div></div></div>
+
+</body>
+</html>

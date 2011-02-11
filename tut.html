@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8"><title>clang tutorial</title>
+<link rel="stylesheet" href="tut.css" type="text/css">
+</head><body><div class="page">
+<h1>How to parse C programs with clang: A tutorial in 9 parts</h1>
+
+<p class="by">written by <a href="mailto:nicolasweber@gmx.de">Nico
+Weber</a></p>
+
+<h2>Introduction</h2>
+
+<p>From clang&#8217;s <a href="http://clang.llvm.org">website</a>:</p>
+
+<blockquote>
+  <p>The goal of the Clang project is to create a new C, C++, Objective C and
+  Objective C++ front-end for the <a href="http://llvm.org">LLVM</a> compiler. </p>
+</blockquote>
+
+<p>What does that mean, and why should you care? A front-end is a  program that
+takes a piece of code and converts it from a flat string to a structured,
+tree-formed representation of the same program &#8212; an AST.</p>
+
+<p>Once you have an AST of a program, you can do many things with the program
+that are hard without an AST. For example, renaming a variable without an AST
+is hard: You cannot simply search for the old name and replace it with a new
+name, as this will change too much (for example, variables that have the old
+name but are in a different namespace, and so on). With an AST, it&#8217;s easy: In
+principle, you only have to change the <code>name</code> field of the right
+<code>VariableDeclaration</code> AST node, and convert the AST back to a string. (In
+practice, it&#8217;s a bit harder for <a href="http://www.spinellis.gr/pubs/jrnl/2003-TSE-Refactor/html/Spi03r.html">some codebases</a>).</p>
+
+<p>Front-ends have existed for decades. So, what&#8217;s special about clang? I think
+the most interesting part is that clang uses a library design, which means
+that youc an easily embed clang into your own programs (and by &#8220;easily&#8221;, I
+mean it. Most programs in this tutorial are well below 50 lines). This
+tutorial tells you how you do this.</p>
+
+<p>So, do you have a large C code-base and want to create <a href="http://people.imendio.com/richard/gtk-rewriter/">automated non-trivial
+refactorings</a>? Would you like to have a <a href="http://ctags.sourceforge.net/">ctags</a> that works
+better with C++ and at all with Objective-C? Would you like to collect some
+statistics about your program, and you feel that <code>grep</code> doesn&#8217;t cut it? Then
+clang is for you.</p>
+
+<p>This tutorial will offer a tour through clang&#8217;s preprocessor, parser, and AST
+libraries. As example, we will write a program that collects a list of all
+globals defined and used in a program. For <a href="input07.h">these</a>
+<a href="input07_1.c">input</a> <a href="input07_2.c">files</a>, this <a href="input07.html">output</a> will be
+generated. The final program is close to production quality: It is for example
+able to process the source code of <a href="http://vim.org">vim</a> &#8212; the resulting html
+file is 2.4 mb! (vim uses lots of globals.) Furthermore, the program can be
+used with any make-based program out of the box &#8212; no change to Makefiles or
+input file lists required.</p>
+
+<p>A short word of warning: clang is still work in prograss. C++-support is not
+yet anywhere near completion, and clang does not have a stable API, so this
+tutorial might not be completely up-to-date. The last time I checked that all
+programs work was <strong>Sep 28, 2008</strong>.</p>
+
+<p>Clang works on all platforms. In this tutorial I assume that you have some
+Unix-based platform, but in principle everything should work on Windows, too.</p>
+
+<h2>Getting started</h2>
+
+<p>There is no official release of clang yet, you have to get it from SVN and
+build it for yourself. Luckily, this is easy:</p>
+
+<pre><code>svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm
+cd llvm
+PATH=$PATH:/Applications/Graphviz.app/Contents/MacOS ./configure
+make -j2
+
+cd tools
+svn co http://llvm.org/svn/llvm-project/cfe/trunk clang
+cd clang
+make -j2
+</code></pre>
+
+<p>If you call <code>./configure</code> without <a href="http://pixelglow.com/graphviz/">graphviz</a> in your <code>PATH</code>, that&#8217;s fine
+too. You&#8217;ll be missing some visualization functionality, but we won&#8217;t use that
+in this tutorial anyway.</p>
+
+<p>Note that this does a debug build of llvm and clang. The resulting libraries
+and binaries will end up in <code>llvm/Debug</code> and are a lot slower than the release
+binaries (which you get when running <code>./configure --enable-optimized</code>).</p>
+
+<p>You can find more information in clang&#8217;s <a href="http://clang.llvm.org/get_started.html">official getting started
+guide</a>. By the way, if you&#8217;re using
+Time Machine, you probably want to emit the llvm folder from your backup &#8212;
+else, 700mb get backed up every time you update and recompile llvm and clang.</p>
+
+<p>XXX: <a href="https://llvm.org/svn/llvm-project/cfe/trunk/">Browse clang source</a>.</p>
+
+<!--
+XXX
+
+* Preprocessor
+* Lexer
+* Parser
+* Actions: Sema, diagnostics
+
+(XXX: it's possible to directly create a lexer as well; see [`HTMLRewrite.cpp`](HTMLRewrite.cpp).
+This is for example useful in raw mode. Perhaps have a "Tut 0" that does
+syntax highlighting only?)
+-->
+
+<h2>Tutorial 01: The bare minimum</h2>
+
+<p>A front-end consists of multiple parts. First is usually a lexer, which
+converts the input from a stream of characters to a stream of tokens. For
+example, the input <code>while</code> is converted from the five characters &#8216;w&#8217;, &#8216;h&#8217;,
+&#8216;i&#8217;, &#8216;l&#8217;, and &#8216;e&#8217; to the token <code>kw_while</code>. For performance reasons, clang does
+not have a separate preprocessor program, but does preprocessing while lexing.</p>
+
+<p>The <code>Preprocessor</code> class is the main interface to the lexer, and it&#8217;s a class
+you will need in almost every program that embeds clang. So, for starters, 
+let&#8217;s try to create <code>Preprocessor</code> object. Our first program will not do
+anything useful, it only constructs a <code>Preprocessor</code> and exits again.</p>
+
+<p>The constructor of <code>Preprocessor</code> takes no less than 5 arguments: A
+<code>Diagnostic</code> object, a <code>LangOptions</code> object, a <code>TargetInfo</code> object, a
+<code>SourceManager</code> object, and finally a <code>HeaderSearch</code> object. Let&#8217;s break down
+what those objects are good for, and how we can build them.</p>
+
+<p>First is <code>Diagnostic</code>. This is used by clang to report errors and warnings to
+the user. A <code>Diagnostic</code> object can have a <code>DiagnosticClient</code>, which is
+responsible for actually displaying the messages to the user. We will use
+clang&#8217;s built-in <code>TextDiagnostics</code> class, which writes errors and warnings to
+the console (it&#8217;s the same <code>DiagnosticClient</code> that is used by the <code>clang</code>
+binary).</p>
+
+<p>Next up is <code>LangOptions</code>. This class lets you configure if you&#8217;re compiling C
+or C++, and which language extensions you want to allow. Constructing this
+object is easy, as its constructor does not take any parameters.</p>
+
+<p>The <code>TargetInfo</code> is easy, too, but we need to call a factory method as the
+constructor is private. The factory method takes a &#8220;host triple&#8221; as parameter
+that defines the architecture clang should compile for, such as
+&#8220;i386-apple-darwin&#8221;. We will pass <code>LLVM_HOST_TRIPLE</code>, which contains the host
+triple describing the machine llvm was compiled on.  But in principle, you can
+use clang as a <a href="http://en.wikipedia.org/wiki/Cross_compile">cross-compiler</a> very easily, too.  The <code>TargetInfo</code> object
+is required so that the preprocessor can add target-specific defines, for
+example <code>__APPLE__</code>. You need to delete this object at the end of the program.</p>
+
+<p><code>SourceManager</code> is used by clang to load and cache source files. Again, its
+constructor takes no arguments.</p>
+
+<p>Finally, the constructor of <code>HeaderSearch</code> requires a <code>FileManager</code>.
+<code>HeaderSearch</code> configures where clang looks for include files.</p>
+
+<p>So, to build a <code>Preprocessor</code> object, the following code is required:</p>
+
+<pre><code>TextDiagnostics diagClient;
+Diagnostic diags(&amp;diagClient);
+LangOptions opts;
+TargetInfo* target = TargetInfo::CreateTargetInfo(LLVM_HOST_TRIPLE);
+SourceManager sm;
+FileManager fm;
+HeaderSearch headers(fm);
+Preprocessor pp(diags, opts, *target, sm, headers);
+// ...
+delete target;
+</code></pre>
+
+<p>Because we will need a <code>Preprocessor</code> object in all tutorials, I&#8217;ve moved this
+initialization code to its own file, <a href="PPContext.h"><code>PPContext.h</code></a>. With this file,
+<a href="tut01_pp.cpp"><code>tut01_pp.cpp</code></a> is quite short (take your time and take a look at those two
+files).</p>
+
+<p>So, all that is left is to compile <a href="tut01_pp.cpp"><code>tut01_pp.cpp</code></a> and you&#8217;re done with part 1!
+This is how you do it:</p>
+
+<pre><code>g++ -I/Users/$USER/src/llvm/tools/clang/include \
+  `/Users/$USER/src/llvm/Debug/bin/llvm-config --cxxflags` \
+  -fno-rtti -c tut01_pp.cpp
+g++ `/Users/$USER/src/llvm/Debug/bin/llvm-config --ldflags` \
+  -lLLVMSupport -lLLVMSystem -lLLVMBitReader -lLLVMBitWriter \
+  -lclangBasic -lclangLex -lclangDriver \
+  -o tut01 tut01_pp.o
+</code></pre>
+
+<p>You need to compile with <code>-fno-rtti</code>, because clang is compiled that way, too.
+Else, the linker will complain with this when linking:</p>
+
+<pre><code>  Undefined symbols:
+    "typeinfo for clang::DiagnosticClient", referenced from:
+        typeinfo for DummyDiagnosticClientin tut01_pp.o
+  ld: symbol(s) not found
+</code></pre>
+
+<p>Also note that you need to link quite a lot of libraries. Both clang and LLVM
+have fine-grained libraries, so that you can link in just what you need.</p>
+
+<p>So, that&#8217;s it for part 1! Now you can run your first shiny, clang-powered
+program:</p>
+
+<pre><code>./tut01
+</code></pre>
+
+<p>Sure enough, it doesn&#8217;t do anything yet. Let&#8217;s tackle this next.</p>
+
+<h2>Tutorial 02: Processing a file</h2>
+
+<p>Right now, out program is not very interesting, as it does not do anything yet.
+We want to change it so that it feeds C files into the preprocessor object. To
+add an input file to the preprocessor, we call:</p>
+
+<pre><code>const FileEntry* file = fm.getFile("filename.c");
+sm.createMainFileID(file, SourceLocation());
+pp.EnterMainSourceFile();
+</code></pre>
+
+<p>This creates a file id for the input file and stores it as the &#8220;main file&#8221; in
+the <code>SourceManager</code> object. The second line tells the preprocessor to enter
+the <code>SourceManager</code>&#8217;s main file into its file list; the call does some other
+setup stuff (such as creating a buffer with predefines), too.</p>
+
+<p>Now that a source file is added, we can ask the preprocessor to preprocess it
+and read the preprocessed input tokens:</p>
+
+<pre><code>Token Tok;
+do {
+  pp.Lex(Tok);  // read one token
+  if (context.diags.hasErrorOccurred())  // stop lexing/pp on error
+    break;
+  pp.DumpToken(Tok);  // outputs to cerr
+  cerr &lt;&lt; endl;
+} while (Tok.isNot(tok::eof));
+</code></pre>
+
+<p>See <a href="tut02_pp.cpp"><code>tut02_pp.cpp</code></a> for the complete program. Note that this is a very complete
+preprocessor, it handles all kinds of corner cases correctly already. It also
+strips comments. The program can be compiled exactly like <code>tut01</code>.</p>
+
+<p>After building, play around with it a bit. For example, here&#8217;s its output when
+<a href="input01.c"><code>input01.c</code></a> is given as an input file:</p>
+
+<pre><code>$ ./tut02 input01.c 
+typedef 'typedef'
+char 'char'
+star '*'
+identifier '__builtin_va_list'
+semi ';'
+int 'int'
+identifier 'main'
+l_paren '('
+r_paren ')'
+l_brace '{'
+int 'int'
+identifier 'a'
+equal '='
+numeric_constant '4'
+plus '+'
+numeric_constant '5'
+semi ';'
+int 'int'
+identifier 'b'
+equal '='
+input01.c:5:13: warning: "/*" within block comment
+  /* Nested /* comments */ 12; // are handled correctly
+            ^
+numeric_constant '12'
+semi ';'
+int 'int'
+identifier 'c'
+equal '='
+numeric_constant '12'
+semi ';'
+r_brace '}'
+eof ''
+</code></pre>
+
+<p>Note the <code>typedef char* __builtin_va_list;</code> that gets added through the
+predefine buffer.  Also note the nicely formatted warning message
+<code>TextDiagnostics</code> gives us for free.  You can also try feeding errorneous
+programs to <code>tut02</code>. As you&#8217;ll see, some errors are detected, while others are
+not (yet). For example, try <a href="input02.c"><code>input02.c</code></a>.</p>
+
+<h2>Tutorial 03: Include files</h2>
+
+<p>If you feed something with an <code>#include</code> line into our program, chances are
+that it does not work. For example, if we feed it <a href="input03.c"><code>input03.c</code></a>, we get an
+error:</p>
+
+<pre><code>$ ./tut02 input03.c 
+typedef 'typedef'
+char 'char'
+star '*'
+identifier '__builtin_va_list'
+semi ';'
+input03.c:1:10: error: 'stdio.h' file not found
+#include &lt;stdio.h&gt;
+         ^
+</code></pre>
+
+<p>We need to tell the preprocessor where it can find its header files. Where
+standard include files are stored depends on your system. On Leopard, they are
+for example in <code>/usr/lib/gcc/i686-apple-darwin/4.0.1/include</code>.</p>
+
+<p>You add those paths via the <code>HeaderSearch</code> object. Its <code>SetSearchPaths()</code>
+method takes a list of <code>DirectoryLookup</code>s (user headers at the front, system
+headers after them), an index that specifies the first system header, and a
+flag if the current directory should be searched for include files as well.</p>
+
+<p>However, clang does luckily include a helper class that makes setting up
+search paths much easier. This helper class is called <code>InitHeaderSearch</code>. To
+add the default system header paths to clang, you use the following code:</p>
+
+<pre><code>InitHeaderSearch init(headers);
+init.AddDefaultSystemIncludePaths(opts);
+init.Realize();  // this actually sends the header list to HeaderSearch
+</code></pre>
+
+<p>With this tiny change, <code>#include</code> directives that include system headers do
+already work. See <a href="tut03_pp.cpp"><code>tut03_pp.cpp</code></a> for the complete program.</p>
+
+<pre><code>$ ./tut03 input03.c
+# ... lots of output omitted
+semi ';'
+r_brace '}'
+int 'int'
+identifier 'main'
+l_paren '('
+r_paren ')'
+l_brace '{'
+identifier 'printf'
+l_paren '('
+string_literal '"Hello, world\n"'
+r_paren ')'
+semi ';'
+r_brace '}'
+eof ''
+</code></pre>
+
+<p>This actually outputs all the tokens found in the included file, so the output
+is quite long.</p>
+
+<p>However, you will probably get warnings similar to</p>
+
+<pre><code>/usr/include/sys/cdefs.h:137:29: warning: "__MWERKS__" is not defined, evaluates to 0
+#if defined(__MWERKS__) &amp;&amp; (__MWERKS__ &gt; 0x2400)
+</code></pre>
+
+<p>While this is a valid warning, <code>gcc</code> or command-line <code>clang</code> do not print it
+by default. To suppress this warning, I have added a line to <a href="PPContext.h"><code>PPContext.h</code></a>
+that tells clang to ignore this kind of warning.</p>
+
+<p>With some effort, it is possible to turn this into a &#8220;real&#8221; preprocessor. See
+<code>Driver/PrintPreprocessedOutput.cpp</code> in clang&#8217;s source for how this could be
+done. (XXX: link clang sources to their declarations in clang&#8217;s websvn)</p>
+
+<h2>Tutorial 04: Parsing the file</h2>
+
+<p>The preprocessor gives us a stream of tokens. We could now write a parser that
+parses that token stream into an AST. Luckily, clang can do this for us.
+However, clang decouples the parser from AST construction, meaning that you
+can use the parser, but not use clang&#8217;s AST.</p>
+
+<p>So, how does clang&#8217;s parser work? The constructor of the <code>Parser</code> class takes
+an object of type <code>Action</code>. <code>Action</code> is an interface class that has a virtual
+method for everything that is parsed. For example, <code>ActOnStartOfFunctionDef()</code>
+is called when the parser parses the start of a function definition. At the
+time of this writing, there are close to 100 <code>ActOn*()</code> methods which you can
+override.</p>
+
+<p>Nearly all overrides are optional. However, <code>isTypeName()</code> must be specified
+so that the parser can differentiate XXX.</p>
+
+<p>Luckily, the class <code>MinimalAction</code> already implements this bit of required
+minimal semantic checking for us, so we can simply use this. Here&#8217;s how the
+parser is used:</p>
+
+<pre><code>IdentifierTable tab(context.opts);
+MinimalAction action(tab);
+Parser p(context.pp, action);
+p.ParseTranslationUnit();
+</code></pre>
+
+<p>That&#8217;s actually all we&#8217;re going to do in this part. To compile the program,
+you need to add <code>-lclangParse</code> to the linker flags. See <a href="tut04_parse.cpp"><code>tut04_parse.cpp</code></a> for
+the complete program. To make the program slightly less boring, it outputs
+some statistics about the program it parses (example input is <a href="input03.c"><code>input03.c</code></a>):</p>
+
+<pre><code>$ ./tut04 input03.c
+
+*** Identifier Table Stats:
+# Identifiers:   83
+# Empty Buckets: 8109
+Hash density (#identifiers per bucket): 0.010132
+Ave identifier length: 8.084337
+Max identifier length: 28
+
+Number of memory regions: 1
+Bytes allocated: 1901
+</code></pre>
+
+<h2>Tutorial 05: Doing something interesting</h2>
+
+<p>By now, we can do some actual analysis of the input code. Remember, we want to
+write a program that lists information about global variables. Finding all
+globals in a program is a good start. One possible approach is to use the
+parser for this.</p>
+
+<p>Every time the parser finds a declarator, the parser calls <code>ActOnDeclarator()</code>
+on the action object. Thus, we override this method in our own subclass of
+<code>MinimalAction</code>.</p>
+
+<p>What is a declarator? It is a C statement that declares something &#8212; a
+variable, a function, a struct, a typedef. Here are some examples of
+declarators:</p>
+
+<pre><code>const unsigned long int b;  // b is just a constant
+int *i;  // declares (and defines) a pointer-to-int variable
+extern int a;  //declares an int variable
+void printf(const char* c, ...);  // a function prototype
+typedef unsigned int u32;  // a typedef
+struct { int a } t;  // a variable that has an anonymous struct as type
+char *(*(**foo [][8])())[];  // ...wtf? see below :-)
+</code></pre>
+
+<p>A declaration has very roughly two parts: the declared type on the left (e.g.
+<code>const unsigned long int</code> or <code>struct { int a }</code>) and a list of &#8220;modifiers&#8221; and
+the variable name itself on the right (e.g. <code>b</code>, <code>*i</code>, or <code>*(*(**foo
+[][8])())[]</code>). The part on the left is represented by a <code>DeclSpec</code> in clang,
+the (potentially complex) part on the right is a list of <code>DeclaratorChunk</code>s. A
+<code>DeclaratorChunk</code> has a <code>Kind</code> that can be one of <code>Pointer</code>, <code>Reference</code>,
+<code>Array</code>, or <code>Function</code>.</p>
+
+<p>As explained <a href="http://eli.thegreenplace.net/2008/07/18/reading-c-type-declarations/">here</a> (go read it!), the last declarator above has this
+type:</p>
+
+<blockquote>
+  <p>foo is array of array of 8 pointer to pointer to function returning pointer
+  to array of pointer to char</p>
+</blockquote>
+
+<p>Accordingly, the <code>DeclaratorChunk</code> passed to our callback has a list of
+<code>DeclaratorChunk</code>s that contain, in that order, the following <code>Kind</code>s:
+<code>Array</code>, <code>Array</code>, <code>Pointer</code>, <code>Pointer</code>, <code>Pointer</code>, <code>Function</code>, <code>Pointer</code>,
+<code>Array</code>, <code>Pointer</code>. Each of the chunks contains more information (e.g. the
+array size for <code>Array</code> chunks).</p>
+
+<p>Since we want to detect global variables, we need to skip <code>Declarator</code>s whose
+first <code>DeclaratorChunk</code> has <code>Kind</code> <code>Function</code>. Luckily, <code>DeclaratorChunk</code> has
+the method <code>isFunctionDeclarator()</code> which does this check, so we can use that.</p>
+
+<p>Furthermore, we&#8217;re only interested in declarations at file scope (as opposed
+to, say, function parameters or local declarations). To check this,
+<code>Declarator</code> offers the <code>getContext()</code> function, which returns <code>FileContext</code>
+for declarators at file scope.</p>
+
+<p>We are not interested in declarators that start with <code>typedef</code> or <code>extern</code>
+(we&#8217;re looking for definition of globals, not their declaration). As <code>typedef</code>
+and <code>extern</code> belong the the &#8220;left&#8221; part of a declarator, information about
+them is stored in the declarator&#8217;s <code>DeclSpec</code>.</p>
+
+<p>Finally, we are not interested in globals from system headers. To check for
+this, we need to know which file the declarator was found in. clang uses the
+class <code>SourceLocation</code> to represent this information. Since there are lots of
+<code>SourceLocation</code>s (every identifier needs to store where it is from, for
+example), some effort has been done to make <code>SourceLocation</code> small &#8212; it&#8217;s
+only 32 bit, as small as an <code>int</code>. As a result, a <code>SourceLocation</code> alone
+cannot tell you much, you also need a <code>SourceManager</code>, which works together
+with <code>SourceLocation</code> for full-featured file identification. <code>SourceManager</code>
+has a method <code>isInSystemHeader(loc)</code> that we can use. (XXX: difference between
+file ids and macro ids.)</p>
+
+<div class="sidebar">
+<h1><code>SourceLocation</code>s, oh my!</h1>
+<p>Macro- vs FileIDs, physical vs logical locations, validity, include loc</p>
+<p>file id: part index into buffer list (14 bit), part index into that buffer
+(17 bit)</p>
+<p>macro id: 20 bit macro id, 9 bit physical offset (signed!), 2 bit unused</p>
+<p>the 20 bit refer to a struct that has a virtual loc, a file loc that
+specifies where the macro is expanded, and a physical loc, a file loc that
+specifies where the character data for the tokens came from.</p>
+<p>Perhaps a few words about <code>MemoryBuffer</code>s?</p>
+<p>File locations are both pysical and logical at the same time</p>
+<p>Macro physical locs need the physical offset from the macro loc</p>
+<p>logical: subject to #line. <b>&lt;- not true!</b></p>
+
+Defined in a file vs defined in a macro. Linked chain?
+
+Comment in SourceManager.h is flat out wrong. Logical/physical not about
+\#line, but about macro substitutions. Logical is where the macro is in the
+file, physical is where in the macro definition stuff happens (?).
+
+  /// MacroIDInfo - Macro SourceLocations refer to these records by their ID.
+  /// Each MacroIDInfo encodes the Instantiation location - where the macro was
+  /// instantiated, and the PhysicalLoc - where the actual character data for
+  /// the token came from.  An actual macro SourceLocation stores deltas from
+  /// these positions.
+
+That seems to be right.
+
+Somewhere else: Physical is were the token comes from, virt where it should
+come from.
+
+</div>
+
+<p>All in all, our <code>ActOnDeclarator()</code> method looks like this:</p>
+
+<pre><code>virtual Action::DeclTy *
+ActOnDeclarator(Scope *S, Declarator &amp;D, DeclTy *LastInGroup) {
+  const DeclSpec&amp; DS = D.getDeclSpec();
+  SourceLocation loc = D.getIdentifierLoc();
+
+  if (D.getContext() == Declarator::FileContext
+      &amp;&amp; DS.getStorageClassSpec() != DeclSpec::SCS_extern
+      &amp;&amp; DS.getStorageClassSpec() != DeclSpec::SCS_typedef
+      &amp;&amp; !D.isFunctionDeclarator()
+      &amp;&amp; !pp.getSourceManager().isInSystemHeader(loc)) {
+    IdentifierInfo *II = D.getIdentifier();
+    cerr &lt;&lt; "Found global declarator " &lt;&lt; II-&gt;getName() &lt;&lt; endl;
+  }
+  return MinimalAction::ActOnDeclarator(S, D, LastInGroup);
+}
+</code></pre>
+
+<p><code>DeclTy</code> is just a typedef for <code>void</code>. Every <code>Action</code> can decide how it wants
+to represent declarations. We use whatever <code>MinimalAction</code> uses. The only
+parameter that is interesting to us is <code>Declarator &amp;D</code>. </p>
+
+<p>The complete program is <a href="tut05_parse.cpp"><code>tut05_parse.cpp</code></a>. Here&#8217;s its output for <a href="input04.c"><code>input04.c</code></a>:</p>
+
+<pre><code>Found global user declarator a
+Found global user declarator a
+Found global user declarator b
+Found global user declarator c
+Found global user declarator funcp
+Found global user declarator fp2
+Found global user declarator fp3
+Found global user declarator f
+Found global user declarator f2
+Found global user declarator t
+</code></pre>
+
+<p>The program works well, but it has a few quirks. Once, it believes that <code>f</code>
+and <code>f2</code> are globals, when they are really just function declarations. With
+the words of <a href="http://article.gmane.org/gmane.comp.compilers.clang.devel/2103">Eli Friedman</a>, from clang&#8217;s excellent and very helpful
+<a href="http://lists.cs.uiuc.edu/mailman/listinfo/cfe-dev">mailing list</a>:</p>
+
+<blockquote>
+  <p>Fundamentally, in C, it&#8217;s impossible to
+  tell apart a global function declaration and a global variable
+  declaration without resolving typedefs and __typeof expressions.
+  Since that&#8217;s beyond the scope of the parser, you&#8217;ll either need to use
+  Sema, do these yourself, or be a bit conservative about printing out
+  things that aren&#8217;t actually globals.</p>
+  
+  <p>Examples of function declarations without an explicit type declarator:</p>
+
+<pre><code>typedef int x();
+x z;
+__typeof(z) r;
+</code></pre>
+</blockquote>
+
+<p>We will fix this problem in the next part.</p>
+
+<p>Also note that this does not find <code>static</code>s local to functions (which are
+globals, too). We won&#8217;t fix this in the tutorial, but it&#8217;s not too hard to do
+if you want to give it a shot.</p>
+
+<h2>Tutorial 06: Doing semantic analysis with clang</h2>
+
+<p>To differentiate variable declarations from function prototypes, we need to do
+semantic analysis. Again, clang can do this for us. Its Sema library is
+basically just an <code>Action</code> object that is passed to the parser. However, all
+this happens behind the scenes.</p>
+
+<p>The interface to Sema is very minimalistic: It&#8217;s just a single function,
+<code>ParseAST()</code>. This function takes a <code>Preprocessor</code> object and an
+<code>ASTConsumer</code>. Behind the scenes, that function builds a <code>Parser</code> object and
+passes it an <code>Action</code> that does the semantic analysis. This <code>Action</code> builds an
+AST while doing this.</p>
+
+<p>We can now get rid of our <code>MyAction</code>. Instead, we do now need an
+<code>ASTConsumer</code>, which you can think of as an <code>Action</code> for Sema. The method we
+want to override is <code>HandleTopLevelDecl()</code>, which is called (surprise!) for
+every top-level declaration. The method gets passed a <code>Decl</code> object, which is
+the AST class used for declarations. <code>HandleTopLevelDecl()</code> has a minor quirk:
+if a declaration contains multiple variables (e.g. <code>int a, b;</code>), it is called
+only once, and the <code>Decl</code> that&#8217;s passed in is a linked list that you need to
+walk (this will be changed <a href="http://lists.cs.uiuc.edu/pipermail/cfe-dev/2008-August/002589.html">to something more sane</a> in the future,
+though).</p>
+
+<p>We want to handle only <code>VarDecl</code>s, and only those that are global and not
+<code>extern</code>. This yields</p>
+
+<pre><code>if (VarDecl *VD = dyn_cast&lt;VarDecl&gt;(D)) {
+  for (; VD; VD = cast_or_null&lt;VarDecl&gt;(VD-&gt;getNextDeclarator())) {
+    if (VD-&gt;isFileVarDecl() &amp;&amp; VD-&gt;getStorageClass() != VarDecl::Extern)
+      cerr &lt;&lt; "Read top-level variable decl: '" &lt;&lt; VD-&gt;getName() &lt;&lt; "'\n";
+  }
+}
+</code></pre>
+
+<p>Note that this is much simpler than what we did in the last part &#8212; and it&#8217;s
+more correct too. Yay.</p>
+
+<p>Our new program is shown in <a href="tut06_sema.cpp"><code>tut06_sema.cpp</code></a>.  <code>ParseAST()</code> also calls
+<code>EnterMainSourceFile()</code> on the preprocessor. So don&#8217;t call this yourself, else
+you get errors about duplicate definitions (because the main source file is
+entered twice into the pp&#8217;s file list), such as</p>
+
+<pre><code>predefines&gt;:3:15: error: redefinition of '__builtin_va_list'
+typedef char* __builtin_va_list;
+              ^
+&lt;predefines&gt;:3:15: error: previous definition is here
+typedef char* __builtin_va_list;
+</code></pre>
+
+<p>Here&#8217;s what our program prints for <a href="input04.c"><code>input04.c</code></a>:</p>
+
+<pre><code>Read top-level variable decl: 'a'
+Read top-level variable decl: 'a'
+Read top-level variable decl: 'b'
+Read top-level variable decl: 'c'
+Read top-level variable decl: 'funcp'
+Read top-level variable decl: 'fp2'
+Read top-level variable decl: 'fp3'
+Read top-level variable decl: 't'
+</code></pre>
+
+<p>Observe that <code>f</code> and <code>f2</code> are now correctly omitted.</p>
+
+<p>Our program is now already good enough to handle real-life code (and we&#8217;re
+still well below 50 lines), but it&#8217;s interface is not. Let&#8217;s tackle this next.</p>
+
+<h2>Tutorial 07: Support for real programs</h2>
+
+<p>Compiling &#8220;real&#8221; source files usually requires that several flags are passed
+to the compiler. Flags that are commonly used are <code>-I</code> to add directories to
+the include file search path, and <code>-D</code> to define macros at the command line.</p>
+
+<p>If we make our program compatible to the flags that are used by common C
+compilers, then we can analyze existing programs simply by changing the
+compiler. Hence, we&#8217;ll add support for <code>-I</code> and <code>-D</code> to our program.</p>
+
+<p>Furthermore, &#8220;real&#8221; compilation invocations ususally pass several other flags
+that are specific to code generation. Those flags are not important to our
+program. Hence, our program will accept arbitrary flags but will ignore them.</p>
+
+<p>Adding support for command-line parameters usually requires a fair amount of
+code. Luckily, we don&#8217;t have to write this code: clang belongs to the LLVM
+project, and LLVM has a very powerful command-line parameter handling library.
+It also has <a href="http://llvm.org/docs/CommandLine.html">great documentation</a>, hence I won&#8217;t explain it
+in detail. In short:</p>
+
+<p>XXX</p>
+
+<p>Code necessary to implement <code>-I</code> (easy) and <code>-D</code> (currently harder than it
+should be). Slurp rest, need special-case slurper for <code>-o</code>.</p>
+
+<p>Vim:</p>
+
+<pre><code>gcc -c -I. -Iproto -DHAVE_CONFIG_H -DFEAT_GUI_MAC -fno-common \
+ -fpascal-strings -Wall -Wno-unknown-pragmas -mdynamic-no-pic \
+ -pipe -I. -Iproto -DMACOS_X_UNIX -no-cpp-precomp \
+ -I/Developer/Headers/FlatCarbon  -g -O2 \
+ -I/System/Library/Frameworks/Python.framework/Versions/2.5/include/python2.5 \
+ version.c -o objects/version.o
+</code></pre>
+
+<p>thus:</p>
+
+<pre><code>static llvm::cl::list&lt;std::string&gt;
+D_macros("D", llvm::cl::value_desc("macro"), llvm::cl::Prefix,
+    llvm::cl::desc("Predefine the specified macro"));
+
+static llvm::cl::list&lt;std::string&gt;
+I_dirs("I", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+    llvm::cl::desc("Add directory to include search path"));
+
+static llvm::cl::opt&lt;string&gt;
+InputFilename(llvm::cl::Positional, llvm::cl::desc("&lt;input file&gt;"),
+    llvm::cl::Required);
+
+static llvm::cl::list&lt;std::string&gt; IgnoredParams(llvm::cl::Sink);
+static llvm::cl::opt&lt;string&gt; dummy("o", llvm::cl::desc("dummy for gcc compat"));
+</code></pre>
+
+<p>Nice output ? &#8212; html output</p>
+
+<p>Also take care of <code>static</code>s and print the name of the declaring file.</p>
+
+<p><code>TranslationUnit</code> contains a whole AST (i.e. all toplevel decls)</p>
+
+<p>See <a href="tut07_sema.cpp"><code>tut07_sema.cpp</code></a>, <a href="input05.c"><code>input05.c</code></a>, <a href="input05.html"><code>input05.html</code></a></p>
+
+<h2>Tutorial 08: Working with the AST</h2>
+
+<p><code>StmtVisitor</code>, strangely recurring pattern</p>
+
+<p>traversion: iterators, visitors</p>
+
+<p>visitor only visits a single element (?) &#8212; need to recurse manually.
+Careful: the child iterator can return NULL (e.g. <code>if</code> without else branch
+will have NULL for the else branch).</p>
+
+<p>expr derived from stmt</p>
+
+<p>Find uses of all globals (in one file only?)</p>
+
+<p>Example in <code>StmtDumper</code>.</p>
+
+<p>XXX: Test with functions containing macros.</p>
+
+<p>only prints uses in functions, that omits some uses (e.g. as initializers of
+other globals)</p>
+
+<p>LogicalLineNumber works with macro expansion, LineNumber does not.</p>
+
+<p>See <a href="tut08_ast.cpp"><code>tut08_ast.cpp</code></a>, <a href="input06.c"><code>input06.c</code></a></p>
+
+<h2>Tutorial 09: Tracking globals across files</h2>
+
+<p>To identify globals over several translation units: Combination
+filename/global name should be unique (global name alone is unique for
+non-static vars). If static vars in functions should be handled, function name
+becomes important, too.</p>
+
+<p>Do it like a compiler: For each file, output an .o file, and build the
+complete file during &#8220;link time&#8221;. The .o file could be</p>
+
+<ul>
+<li>A copy of the input file</li>
+<li>A serialized AST of the input file</li>
+<li>A serialized form of the extracted data</li>
+</ul>
+
+<p>Problem with 1.: Need to remember compile flags, paths, etc</p>
+
+<p>Problem with 3.: Likely need manual (de)serializing code, not really flexible</p>
+
+<p>Second options seems to hit the sweet spot: Shows some more clang, keeps
+parsing paralellizable, but keeps .o files general.</p>
+
+<p>Sadly, serializing is still incomplete, so we can&#8217;t do that. So, go with 3 for
+now. We need to serialize for each file:</p>
+
+<ul>
+<li>(List of declared globals)</li>
+<li>List of defined globals (with information if they are static to that file)</li>
+<li>List of global uses, perhaps along with a few lines of context</li>
+</ul>
+
+<p>The linker then can for each global list all uses.</p>
+
+<p>Need to ignore globals in system headers. Tricky: Where to put -I files? Need
+them as users for some dirs (., proto), as system for others (python). For now
+keep them as system and whitelist <code>.</code>. This drops proto, but that&#8217;s ok for
+now.</p>
+
+<p>Careful: Need to collect globals on the rhs of toplevel inits, too (XXX).</p>
+
+<p>What about multiple declarations (e.g. <code>gui</code>)?</p>
+
+<p>See <a href="tut09_ast.cpp"><code>tut09_ast.cpp</code></a>, <a href="input07_1.c"><code>input07_1.c</code></a>, <a href="input07_2.c"><code>input07_2.c</code></a>, and <a href="input07.h"><code>input07.h</code></a>.</p>
+
+<h2>ideas</h2>
+
+<p>Some words about codegen and analysis</p>
+
+<h2>Wrap up</h2>
+
+<p>clang is somewhat modular: you can plug in a new parser as long as it conforms to
+the <code>Action</code> interface, several ast consumers can be used, etc.</p>
+
+<p>codegen uses a visitor</p>
+
+<p>analysis lib is cool and wasn&#8217;t covered at all.</p>
+
+<h2>questions</h2>
+
+<ul>
+<li>Why is the physical macro offset needed in <code>getPhysicalLoc()</code> but no in
+<code>getLogicalLoc()</code>?</li>
+<li>libDriver: <code>DefineBuiltinMacro</code>, <code>DeclPrinter</code>,
+         pp construction (inter alia header search),
+         perhaps standard options (-D, -I, ?)</li>
+</ul>
+
+<h2>Download</h2>
+
+<p>You can download this tutorial along with all sources, the Makefile, etc as
+a <a href="clangtut.zip">zip file</a>.</p>
+
+<h2>TODO</h2>
+
+<p>XXX: script that can parse <code>EXEC: cmd</code> lines, then use this for program
+output, code excerpts, etc</p>
+
+<p>XXX: use markdown-python with highlight-code extensions (which uses pygments)</p>
+
+ <!--vim:set tw=78 ft=markdown:-->
+</div><div class="footer">
+Last modified on
+So 28 Sep 2008 18:06:03 PDT
+</div></body></html>
