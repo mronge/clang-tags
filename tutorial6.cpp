@@ -68,6 +68,36 @@ public:
     }
 };
 
+class ETagsWriter
+{
+public:
+  ETagsWriter() { }
+  virtual ~ETagsWriter() { }
+
+  virtual int openFile(const char* filename)
+  {
+    // return FD
+    return 0;
+  }
+
+  virtual void closeFile(int file)
+  {
+  }
+
+  virtual void startSection(const char* sourceName)
+  {
+  }
+
+  virtual void closeSection()
+  {
+  }
+
+  virtual void addTag(const char* tagDefinition, const char* tagName, unsigned int lineNumber, unsigned int byteOffset)
+  {
+  }
+
+};
+
 int main()
 {
 	clang::DiagnosticOptions diagnosticOptions;
