@@ -1,4 +1,6 @@
 
+@protocol Foo
+@end
 
 @interface DCILatLon
 {

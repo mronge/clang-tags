@@ -58,22 +58,36 @@ public:
         {
             count++;
             clang::ObjCInterfaceDecl *vdc = dyn_cast<clang::ObjCInterfaceDecl>(*it);
-            if (!vdc)
+            if (vdc)
             {
-              continue;
-            }
-
             std::cout << "Classname: "
                       << vdc->getNameAsString() 
                       << " LineNum: " 
                       << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) 
                       << " Column: "
-                      << aSourceManager->getInstantiationColumnNumber(vdc->getClassLoc()) 
+                      << aSourceManager->getInstantiationColumnNumber(vdc->getLocStart()) 
                       << " Filename: " 
                       <<  aSourceManager->getBufferName(vdc->getClassLoc()) 
                       << " File offset " 
                       << aSourceManager->getFileOffset(vdc->getClassLoc()) 
-                      << std::endl;
+                      << std::endl;              
+            }
+
+            clang::ObjCProtocolDecl *vdp = dyn_cast<clang::ObjCProtocolDecl>(*it);
+            if (vdp)
+            {
+            std::cout << "Classname: "
+                      << vdp->getNameAsString() 
+                      << " LineNum: " 
+                      << aSourceManager->getInstantiationLineNumber(vdp->getLocStart()) 
+                      << " Column: "
+                      << aSourceManager->getInstantiationColumnNumber(vdp->getLocStart()) 
+                      << " Filename: " 
+                      <<  aSourceManager->getBufferName(vdp->getLocStart()) 
+                      << " File offset " 
+                      << aSourceManager->getFileOffset(vdp->getLocStart()) 
+                      << std::endl;              
+            }
         }
     }
 };
