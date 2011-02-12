@@ -86,25 +86,27 @@ public:
         {
             int totalSize = 0;
             char buf[32];
-            for (std::list<const char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
+            for (std::list<char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
             {
                 std::cout << "Symbol: '" << (*it) << "' is " << std::strlen(*it) << " bytes long" << std::endl;
                 totalSize += std::strlen(*it);
             }
             // Now that I have the total size, write it out to the head
             sprintf(buf, "%d\n", totalSize);
+            std::cout << "Total size is " << totalSize << std::endl;
             int result = doWrite(m_FD, buf, std::strlen(buf));
-            for (std::list<const char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
+            for (std::list<char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
             {
                 result = doWrite(m_FD, (*it), std::strlen(*it));
-                delete *it;
+//                free(*it);
             }
         }
 
     virtual void addTag(const char* tagDefinition, const char* tagName, unsigned int lineNumber, unsigned int byteOffset)
         {
-            char buf[2048];
+            char* buf = (char* )malloc(2048);
             sprintf(buf, "%s%d%s%d%d,%d\n", tagDefinition, 0x7f, tagName, 0x01, lineNumber, byteOffset);
+            std::cout << "Creating tag: " << buf << std::endl;
             m_tagDefinitions.push_back(buf);
         }
 
@@ -120,8 +122,8 @@ protected:
         }
 
 private:
-    mutable int m_FD;             // File Descriptor.
-    std::list<const char *> m_tagDefinitions;
+    mutable int m_FD;
+    std::list<char *> m_tagDefinitions;
 };
 
 class MyASTConsumer : public clang::ASTConsumer
@@ -161,17 +163,6 @@ public:
                 lineNumber = _sourceManager->getInstantiationLineNumber(vdc->getClassLoc());
                 fileOffset = _sourceManager->getFileOffset(vdc->getClassLoc());
                 sprintf(tagDef, "@interface %s", name);
-                // std::cout << "Classname: "
-                //           << vdc->getNameAsString() 
-                //           << " LineNum: " 
-                //           << _sourceManager->getInstantiationLineNumber(vdc->getClassLoc()) 
-                //           << " Column: "
-                //           << _sourceManager->getInstantiationColumnNumber(vdc->getLocStart()) 
-                //           << " Filename: " 
-                //           <<  bufferName
-                //           << " File offset " 
-                //           << _sourceManager->getFileOffset(vdc->getClassLoc()) 
-                //           << std::endl;              
             }
 
             // clang::ObjCProtocolDecl *vdp = dyn_cast<clang::ObjCProtocolDecl>(*it);
