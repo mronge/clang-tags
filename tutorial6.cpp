@@ -105,7 +105,7 @@ public:
     virtual void addTag(const char* tagDefinition, const char* tagName, unsigned int lineNumber, unsigned int byteOffset)
         {
             char* buf = (char* )malloc(2048);
-            sprintf(buf, "%s%d%s%d%d,%d\n", tagDefinition, 0x7f, tagName, 0x01, lineNumber, byteOffset);
+            sprintf(buf, "%s%c%s%c%d,%d\n", tagDefinition, 0x7f, tagName, 0x01, lineNumber, byteOffset);
             std::cout << "Creating tag: " << buf << std::endl;
             m_tagDefinitions.push_back(buf);
         }
