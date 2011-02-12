@@ -88,17 +88,18 @@ public:
             char buf[32];
             for (std::list<char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
             {
-                std::cout << "Symbol: '" << (*it) << "' is " << std::strlen(*it) << " bytes long" << std::endl;
+                // std::cout << "Symbol: '" << (*it) << "' is " << std::strlen(*it) << " bytes long" << std::endl;
                 totalSize += std::strlen(*it);
             }
             // Now that I have the total size, write it out to the head
             sprintf(buf, "%d\n", totalSize);
-            std::cout << "Total size is " << totalSize << std::endl;
+            // std::cout << "Total size is " << totalSize << std::endl;
             int result = doWrite(m_FD, buf, std::strlen(buf));
             for (std::list<char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
             {
                 result = doWrite(m_FD, (*it), std::strlen(*it));
-//                free(*it);
+		// FIXME: Crasher
+                // free(*it);
             }
         }
 
@@ -106,7 +107,7 @@ public:
         {
             char* buf = (char* )malloc(2048);
             sprintf(buf, "%s%c%s%c%d,%d\n", tagDefinition, 0x7f, tagName, 0x01, lineNumber, byteOffset);
-            std::cout << "Creating tag: " << buf << std::endl;
+            // std::cout << "Creating tag: " << buf << std::endl;
             m_tagDefinitions.push_back(buf);
         }
 
@@ -186,28 +187,28 @@ public:
             if (std::strcmp(lastBufferName, bufferName) != 0 && found) {
                 // was there a previous buffer?
                 if (std::strlen(lastBufferName) > 0) {
-                    std::cout << "Close section " << std::endl;
+                    // std::cout << "Close section " << std::endl;
                     _writer->closeSection();
                 }
                 _writer->startSection(bufferName);
-                std::cout << "New section --------------------------------------------------" <<std::endl;
+                // std::cout << "New section --------------------------------------------------" <<std::endl;
                 std::strcpy(lastBufferName, bufferName);
             }
 
             if (found) {
                 _writer->addTag(tagDef, name, lineNumber, fileOffset);
 
-                std::cout << "Name: "
-                          << name
-                          << " LineNum: " 
-                          << lineNumber
-                          << " Filename: " 
-                          <<  bufferName
-                          << " File offset " 
-                          << fileOffset
-                          << " Tag Definition "
-                          << tagDef
-                          << std::endl;              
+                // std::cout << "Name: "
+                //           << name
+                //           << " LineNum: " 
+                //           << lineNumber
+                //           << " Filename: " 
+                //           <<  bufferName
+                //           << " File offset " 
+                //           << fileOffset
+                //           << " Tag Definition "
+                //           << tagDef
+                //           << std::endl;              
             }
         }
     }
