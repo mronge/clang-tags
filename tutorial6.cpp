@@ -235,36 +235,9 @@ int main()
 	clang::HeaderSearch headerSearch(fileManager);
 
 	clang::HeaderSearchOptions headerSearchOptions;
-	// <Warning!!> -- Platform Specific Code lives here
-	// This depends on A) that you're running linux and
-	// B) that you have the same GCC LIBs installed that
-	// I do. 
-	// Search through Clang itself for something like this,
-	// go on, you won't find it. The reason why is Clang
-	// has its own versions of std* which are installed under 
-	// /usr/local/lib/clang/<version>/include/
-	// See somewhere around Driver.cpp:77 to see Clang adding
-	// its version of the headers to its include path.
-	headerSearchOptions.AddPath("/usr/include/linux",
-			clang::frontend::Angled,
-			false,
-			false,
-			false);
-
-
-
-
-	headerSearchOptions.AddPath("/usr/include/c++/4.4/tr1",
-			clang::frontend::Angled,
-			false,
-			false,
-			false);
-	headerSearchOptions.AddPath("/usr/include/c++/4.4",
-			clang::frontend::Angled,
-			false,
-			false,
-			false);
-	// </Warning!!> -- End of Platform Specific Code
+    headerSearchOptions.UseBuiltinIncludes = 0;
+    headerSearchOptions.UseStandardIncludes = 0;
+    headerSearchOptions.UseStandardCXXIncludes = 0;
 
 	clang::TargetOptions targetOptions;
 	targetOptions.Triple = llvm::sys::getHostTriple();
