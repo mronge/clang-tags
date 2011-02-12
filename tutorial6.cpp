@@ -43,6 +43,13 @@
 
 #include "clang/Parse/ParseAST.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+
+//std-c lib
+#include <list>
+
+
 class MyASTConsumer : public clang::ASTConsumer
 {
 public:
@@ -81,31 +88,76 @@ public:
 class ETagsWriter
 {
 public:
-  ETagsWriter() { }
-  virtual ~ETagsWriter() { }
+  ETagsWriter() : m_FD(-1) { }
+  virtual ~ETagsWriter()
+  {
+    if (m_FD != -1)
+      {
+        close(m_FD);
+        m_FD = -1;
+      }
+  }
 
   virtual int openFile(const char* filename)
   {
-    // return FD
-    return 0;
+    m_FD = open(filename, O_CREAT | O_TRUNC);
+    return m_FD;
   }
 
-  virtual void closeFile(int file)
+  virtual void closeFile()
   {
+    close(m_FD);
+    m_FD = -1;
   }
 
   virtual void startSection(const char* sourceName)
   {
+    char c[2] = { 0x0c, 0x0a };
+    int result = doWrite(m_FD, c, 2);
+    result = doWrite(m_FD, sourceName, strlen(sourceName));
+    result = doWrite(m_FD, ",", 1);
   }
 
   virtual void closeSection()
   {
+    int totalSize = 0;
+    char buf[32];
+    for (std::list<const char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
+      {
+        std::cout << "Symbol: '" << (*it) << "' is " << strlen(*it) << " bytes long" << std::endl;
+        totalSize += strlen(*it);
+      }
+    // Now that I have the total size, write it out to the head
+    sprintf(buf, "%d\n", totalSize);
+    int result = doWrite(m_FD, buf, strlen(buf));
+    for (std::list<const char*>::iterator it = m_tagDefinitions.begin(); it != m_tagDefinitions.end(); it++)
+      {
+        result = doWrite(m_FD, (*it), strlen(*it));
+        delete *it;
+      }
   }
 
   virtual void addTag(const char* tagDefinition, const char* tagName, unsigned int lineNumber, unsigned int byteOffset)
   {
+    char buf[2048];
+    sprintf(buf, "%s%d%s%d%d,%d\n", tagDefinition, 0x7f, tagName, 0x01, lineNumber, byteOffset);
+    m_tagDefinitions.push_back(buf);
   }
 
+protected:
+  int doWrite(int FD, const void* buf, int totalBytes)
+  {
+    int result = write(FD, buf, totalBytes);
+    if (result <= 0)
+      {
+        std::cout << "Error " << result << "writing to file; ETAGS file probably won't be readable" << std::endl;
+      }
+    return result;
+  }
+
+private:
+  mutable int m_FD;             // File Descriptor.
+  std::list<const char *> m_tagDefinitions;
 };
 
 int main()
