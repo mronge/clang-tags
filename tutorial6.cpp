@@ -54,33 +54,64 @@ class MyASTConsumer : public clang::ASTConsumer
 {
 public:
   clang::SourceManager *aSourceManager;
-  MyASTConsumer(clang::SourceManager *sourceManager) : clang::ASTConsumer(), aSourceManager(sourceManager) { }
+  char lastBufferName[2048];
+  MyASTConsumer(clang::SourceManager *sourceManager) : clang::ASTConsumer(), aSourceManager(sourceManager)
+    { 
+        lastBufferName[0] = '\0';
+    }
     virtual ~MyASTConsumer() { }
 
     virtual void HandleTopLevelDecl( clang::DeclGroupRef d)
     {
-        static int count = 0;
         clang::DeclGroupRef::iterator it;
         for( it = d.begin(); it != d.end(); it++)
         {
-            count++;
+            char *bufferName = "";
+            int found = 0;
             clang::ObjCInterfaceDecl *vdc = dyn_cast<clang::ObjCInterfaceDecl>(*it);
-            if (!vdc)
+            if (vdc)
             {
-              continue;
+                found = 1;
+                bufferName = (char *)aSourceManager->getBufferName(vdc->getClassLoc());
+                std::cout << "Classname: "
+                          << vdc->getNameAsString() 
+                          << " LineNum: " 
+                          << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) 
+                          << " Column: "
+                          << aSourceManager->getInstantiationColumnNumber(vdc->getLocStart()) 
+                          << " Filename: " 
+                          <<  bufferName
+                          << " File offset " 
+                          << aSourceManager->getFileOffset(vdc->getClassLoc()) 
+                          << std::endl;              
             }
 
-            std::cout << "Classname: "
-                      << vdc->getNameAsString() 
-                      << " LineNum: " 
-                      << aSourceManager->getInstantiationLineNumber(vdc->getClassLoc()) 
-                      << " Column: "
-                      << aSourceManager->getInstantiationColumnNumber(vdc->getClassLoc()) 
-                      << " Filename: " 
-                      <<  aSourceManager->getBufferName(vdc->getClassLoc()) 
-                      << " File offset " 
-                      << aSourceManager->getFileOffset(vdc->getClassLoc()) 
-                      << std::endl;
+            clang::ObjCProtocolDecl *vdp = dyn_cast<clang::ObjCProtocolDecl>(*it);
+            if (vdp)
+            {
+                found = 1;
+                bufferName = (char *)aSourceManager->getBufferName(vdp->getLocStart());
+                std::cout << "Classname: "
+                          << vdp->getNameAsString() 
+                          << " LineNum: " 
+                          << aSourceManager->getInstantiationLineNumber(vdp->getLocStart()) 
+                          << " Column: "
+                          << aSourceManager->getInstantiationColumnNumber(vdp->getLocStart()) 
+                          << " Filename: " 
+                          <<  aSourceManager->getBufferName(vdp->getLocStart()) 
+                          << " File offset " 
+                          << aSourceManager->getFileOffset(vdp->getLocStart()) 
+                          << std::endl;              
+            }
+
+            if (strcmp(lastBufferName, bufferName) != 0 && found) {
+                // was there a previous buffer?
+                if (strlen(lastBufferName) > 0) {
+                    //std::cout << "Close section " << std::endl;
+                }
+                std::cout << "New section --------------------------------------------------" <<std::endl;
+                strcpy(lastBufferName, bufferName);
+            }
         }
     }
 };
@@ -243,7 +274,7 @@ int main()
 		frontendOptions);
 		
 	const clang::FileEntry *pFile = fileManager.getFile(
-        "DCILatLon.m");
+        "test.m");
 	sourceManager.createMainFileID(pFile);
 	//preprocessor.EnterMainSourceFile();
 
