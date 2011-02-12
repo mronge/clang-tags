@@ -147,7 +147,7 @@ public:
         {
             char tagDef[1024];
             char *bufferName = "";
-            const char *name = "";
+            char name[1024];
             unsigned lineNumber = 0;
             unsigned fileOffset = 0;
             int found = 0;
@@ -157,21 +157,10 @@ public:
             {
                 found = 1;
                 bufferName = (char *)_sourceManager->getBufferName(vdc->getClassLoc());
-                name = vdc->getNameAsString().c_str();
+                strcpy(name, vdc->getNameAsString().c_str());
                 lineNumber = _sourceManager->getInstantiationLineNumber(vdc->getClassLoc());
                 fileOffset = _sourceManager->getFileOffset(vdc->getClassLoc());
                 sprintf(tagDef, "@interface %s", name);
-                // std::cout << "Classname: "
-                //           << vdc->getNameAsString() 
-                //           << " LineNum: " 
-                //           << _sourceManager->getInstantiationLineNumber(vdc->getClassLoc()) 
-                //           << " Column: "
-                //           << _sourceManager->getInstantiationColumnNumber(vdc->getLocStart()) 
-                //           << " Filename: " 
-                //           <<  bufferName
-                //           << " File offset " 
-                //           << _sourceManager->getFileOffset(vdc->getClassLoc()) 
-                //           << std::endl;              
             }
 
             // clang::ObjCProtocolDecl *vdp = dyn_cast<clang::ObjCProtocolDecl>(*it);
@@ -204,7 +193,19 @@ public:
             }
 
             if (found) {
-                _writer->addTag("", name, lineNumber, fileOffset);
+                _writer->addTag(tagDef, name, lineNumber, fileOffset);
+
+                std::cout << "Name: "
+                          << name
+                          << " LineNum: " 
+                          << lineNumber
+                          << " Filename: " 
+                          <<  bufferName
+                          << " File offset " 
+                          << fileOffset
+                          << " Tag Definition "
+                          << tagDef
+                          << std::endl;              
             }
         }
     }
