@@ -1,5 +1,3 @@
-// This code is licensed under the New BSD license.
-// See LICENSE.txt for more details.
 #include <iostream>
 
 #include "llvm/Support/raw_ostream.h"
@@ -13,6 +11,7 @@
 
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/HeaderSearch.h"
+#include "clang/Lex/DirectoryLookup.h"
 #include "clang/Basic/FileManager.h"
 
 #include "clang/Frontend/HeaderSearchOptions.h"
@@ -198,17 +197,17 @@ public:
             if (found) {
                 _writer->addTag(tagDef, name, lineNumber, fileOffset);
 
-                // std::cout << "Name: "
-                //           << name
-                //           << " LineNum: " 
-                //           << lineNumber
-                //           << " Filename: " 
-                //           <<  bufferName
-                //           << " File offset " 
-                //           << fileOffset
-                //           << " Tag Definition "
-                //           << tagDef
-                //           << std::endl;              
+                std::cout << "Name: "
+                          << name
+                          << " LineNum: " 
+                          << lineNumber
+                          << " Filename: " 
+                          <<  bufferName
+                          << " File offset " 
+                          << fileOffset
+                          << " Tag Definition "
+                          << tagDef
+                          << std::endl;              
             }
         }
     }
@@ -235,6 +234,7 @@ int main()
         fileManager);
 	clang::HeaderSearch headerSearch(fileManager);
 
+    // We don't want to include any system files
 	clang::HeaderSearchOptions headerSearchOptions;
     headerSearchOptions.UseBuiltinIncludes = 0;
     headerSearchOptions.UseStandardIncludes = 0;
@@ -268,7 +268,12 @@ int main()
 		preprocessorOptions,
 		headerSearchOptions,
 		frontendOptions);
-		
+
+    // We don't want Clang to load files via #import or #include
+    // Otherwise we will visit the same files multiple times as they are imported
+    // and we may visit files outside the directories we are crawling
+    headerSearch.SetSearchPaths(std::vector<clang::DirectoryLookup>(), 0, true);
+
 	const clang::FileEntry *pFile = fileManager.getFile("test.m");
 	sourceManager.createMainFileID(pFile);
 	//preprocessor.EnterMainSourceFile();
