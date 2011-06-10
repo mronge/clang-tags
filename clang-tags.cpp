@@ -259,7 +259,7 @@ void ParseFile(char *path, ETagsWriter *writer) {
     // We don't want Clang to load files via #import or #include
     // Otherwise we will visit the same files multiple times as they are imported
     // and we may visit files outside the directories we are crawling
-    headerSearch.SetSearchPaths(std::vector<clang::DirectoryLookup>(), 0, true);
+    headerSearch.SetSearchPaths(std::vector<clang::DirectoryLookup>(), 0, 0, true);
 
     const clang::TargetInfo &targetInfo = *pTargetInfo;
 
